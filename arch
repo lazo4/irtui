@@ -1,0 +1,9 @@
+	IRT events						Events						MAIN						Render
+
+	Listen on IRT WS	           Poll from crossterm         Render ----------------->   Recv state change
+
+	send to evt channel ----------> sent key event ----------> Recv event				   Maybe render pano
+														   |
+												       	   |	update internal state	   Draw UI
+														   |
+														   +----send derived evts
