@@ -6,7 +6,7 @@ use image::{GenericImage, ImageBuffer, ImageReader, Rgb, RgbImage, imageops};
 use reqwest::Client;
 use serde_json::Value;
 use tokio::task;
-use tracing::{Level, debug, info};
+use tracing::{debug, info};
 
 // All of this is adapted from Mikarific/LookoutTheWindow
 
@@ -407,7 +407,7 @@ async fn load_tile(tile: &Tile, client: &Client) -> anyhow::Result<RgbImage> {
 
     debug!("Fetching tile from URL: {}", query_url);
 
-    let resp = reqwest::get(&query_url).await?;
+    let resp = client.get(&query_url).send().await?;
 
     if !resp.status().is_success() {
         anyhow::bail!("Request failed with status: {}", resp.status());
@@ -551,7 +551,7 @@ fn pano_to_plane(
             let sphere_u = sphere_u.rem_euclid(pano_width as f64);
             let sphere_v = sphere_v.clamp(0., pano_height as f64 - 1.);
 
-            let color = interpolate_color(sphere_u as f32, sphere_v as f32, &pano);
+            let color = interpolate_color(sphere_u as f32, sphere_v as f32, pano);
             out.put_pixel(u, v, color);
         }
     }

@@ -1,6 +1,6 @@
 use std::{fmt::Debug, time::Duration};
 
-use crossterm::event::{Event as CrosstermEvent, EventStream};
+use crossterm::event::Event as CrosstermEvent;
 use futures::prelude::*;
 use ratatui_image::protocol::Protocol;
 use tokio::{sync::mpsc, task};
@@ -45,7 +45,7 @@ pub enum AppEvent {
 impl Debug for AppEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AppEvent::NewFrame(proto) => {
+            AppEvent::NewFrame(_) => {
                 write!(f, "AppEvent::NewFrame(Protocol)")
             }
             AppEvent::Quit => write!(f, "AppEvent::Quit"),

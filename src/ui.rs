@@ -16,11 +16,9 @@ impl Widget for &App {
     // - https://docs.rs/ratatui/latest/ratatui/widgets/index.html
     // - https://github.com/ratatui/ratatui/tree/master/examples
     fn render(self, area: Rect, buf: &mut Buffer) {
-        if let Some(pano) = &self.current_pano
-            && let Some(location) = &self.location
+        if let Some(location) = &self.location
             && let Some(proto) = &self.cur_frame
         {
-
             let image = Image::new(proto);
             image.render(area, buf);
 
@@ -46,7 +44,10 @@ impl Widget for &App {
                         .padding(Padding::vertical(1)),
                 );
 
-            Clear::default().render(layout[0].centered_horizontally(Constraint::Max(content_width + 4)), buf);
+            Clear.render(
+                layout[0].centered_horizontally(Constraint::Max(content_width + 4)),
+                buf,
+            );
 
             town_name.render(
                 layout[0].centered_horizontally(Constraint::Max(content_width + 4)),
@@ -61,7 +62,6 @@ impl Widget for &App {
                 layout[1].centered_horizontally(Constraint::Max(location.road.len() as u16 + 2)),
                 buf,
             );
-
         }
     }
 }
