@@ -33,6 +33,8 @@ pub struct App {
     pub events: EventHandler,
     // For sending pano render requests
     pub pano_tx: Sender<PanoRequest>,
+
+    pub users_online: u16,
 }
 
 impl Default for App {
@@ -112,9 +114,7 @@ impl App {
                                 }
                             };
 
-                            evt_sender
-                                .send(Event::App(AppEvent::NewFrame(protocol)))
-                                .unwrap();
+                            let _ = evt_sender.send(Event::App(AppEvent::NewFrame(protocol)));
                         }
                     }
                     PanoRequest::Render(panoid, heading) => {
@@ -187,6 +187,7 @@ impl App {
             pano_tx,
             events: evt_handler, // Spawn event handler thread
             cur_frame: None,
+            users_online: 0,
         }
     }
 
@@ -247,6 +248,7 @@ impl App {
         debug!("Recved roadtrip event {roadtrip_event:?}");
         match roadtrip_event {
             RoadtripEvent::WS(evt) => {
+                self.users_online = evt.total_users;
                 let panoid = evt.pano.clone();
                 if self.current_pano != Some((evt.pano, evt.heading)) {
                     // Update current pano and trigger a render request.

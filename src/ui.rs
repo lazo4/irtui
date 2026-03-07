@@ -2,6 +2,7 @@ use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
+    text::Line,
     widgets::{Block, BorderType, Clear, Padding, Paragraph, Widget},
 };
 use ratatui_image::Image;
@@ -62,6 +63,21 @@ impl Widget for &App {
                 layout[1].centered_horizontally(Constraint::Max(location.road.len() as u16 + 2)),
                 buf,
             );
+
+            let content: Line = vec![
+                "● ".red(),
+                format!("{} drivers online", self.users_online).black(),
+            ]
+            .into();
+            let content_width = content.width() as u16 + 4;
+            let content_rect = Rect::new(area.width - content_width, 0, content_width, 3);
+            Clear.render(content_rect, buf);
+            let drivers_online = Paragraph::new(content)
+                .style(Style::default().bg(Color::Rgb(255, 242, 2)))
+                .centered()
+                .block(Block::bordered().border_type(BorderType::Rounded).black())
+                .bold();
+            drivers_online.render(content_rect, buf);
         }
     }
 }

@@ -1,4 +1,4 @@
-use std::{f64::consts::PI, io::Cursor, sync::Arc, time::Instant};
+use std::{f32::consts::PI, io::Cursor, sync::Arc, time::Instant};
 
 use anyhow::anyhow;
 use base64::{Engine as _, engine::general_purpose};
@@ -483,13 +483,13 @@ pub async fn load_equirect(meta: &PanoMetadata) -> anyhow::Result<RgbImage> {
     Ok(buf)
 }
 
-fn map_to_sphere(x: f64, y: f64, z: f64, yaw: f64, pitch: f64) -> (f64, f64) {
-    let theta = f64::acos(z / (x * x + y * y + z * z).sqrt());
-    let phi = f64::atan2(y, x);
+fn map_to_sphere(x: f32, y: f32, z: f32, yaw: f32, pitch: f32) -> (f32, f32) {
+    let theta = f32::acos(z / (x * x + y * y + z * z).sqrt());
+    let phi = f32::atan2(y, x);
 
-    let theta_prime = f64::acos(theta.sin() * phi.sin() * pitch.sin() + theta.cos() * pitch.cos());
+    let theta_prime = f32::acos(theta.sin() * phi.sin() * pitch.sin() + theta.cos() * pitch.cos());
 
-    let mut phi_prime = f64::atan2(
+    let mut phi_prime = f32::atan2(
         theta.sin() * phi.sin() * pitch.cos() - theta.cos() * pitch.sin(),
         theta.sin() * phi.cos(),
     );
@@ -514,12 +514,12 @@ fn interpolate_color(x: f32, y: f32, pano: &RgbImage) -> Rgb<u8> {
 /// for this code
 fn pano_to_plane(
     pano: &RgbImage,
-    fov: f64,
+    fov: f32,
     out_w: u32,
     out_h: u32,
-    yaw: f64,
-    pitch: f64,
-    roll: f64,
+    yaw: f32,
+    pitch: f32,
+    roll: f32,
 ) -> RgbImage {
     let (pano_width, pano_height) = pano.dimensions();
     let yaw_radian = yaw.to_radians();
@@ -528,15 +528,15 @@ fn pano_to_plane(
 
     let mut out = RgbImage::new(out_w, out_h);
 
-    let out_width = out_w as f64;
-    let out_height = out_h as f64;
+    let out_width = out_w as f32;
+    let out_height = out_h as f32;
     let focal_len = (0.5 * out_width) / (fov.to_radians() / 2.0).tan();
     info!("focal length is {focal_len}");
 
     for u in 0..out_width as u32 {
         for v in 0..out_height as u32 {
-            let x = u as f64 - out_width * 0.5;
-            let y = out_height * 0.5 - v as f64;
+            let x = u as f32 - out_width * 0.5;
+            let y = out_height * 0.5 - v as f32;
             let z = focal_len;
 
             // Apply roll
@@ -545,11 +545,11 @@ fn pano_to_plane(
 
             let (theta, phi) = map_to_sphere(x_rot, y_rot, z, yaw_radian, pitch_radian);
 
-            let sphere_u = phi * pano_width as f64 / (2. * PI);
-            let sphere_v = theta * pano_height as f64 / PI;
+            let sphere_u = phi * pano_width as f32 / (2. * PI);
+            let sphere_v = theta * pano_height as f32 / PI;
 
-            let sphere_u = sphere_u.rem_euclid(pano_width as f64);
-            let sphere_v = sphere_v.clamp(0., pano_height as f64 - 1.);
+            let sphere_u = sphere_u.rem_euclid(pano_width as f32);
+            let sphere_v = sphere_v.clamp(0., pano_height as f32 - 1.);
 
             let color = interpolate_color(sphere_u as f32, sphere_v as f32, pano);
             out.put_pixel(u, v, color);
@@ -577,9 +577,9 @@ pub async fn render_pano_from_metadata(
         90.,
         out_w,
         out_h,
-        (270. - meta.heading + heading as f64).rem_euclid(360.), // This seems to work, let's not mess with it, OK
-        meta.tilt,
-        -meta.roll,
+        (270. - meta.heading as f32 + heading as f32).rem_euclid(360.), // This seems to work, let's not mess with it, OK
+        meta.tilt as f32,
+        -meta.roll as f32,
     );
 
     let time_ms = before_render.elapsed().as_secs_f64() * 1000.0;

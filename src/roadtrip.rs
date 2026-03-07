@@ -1,6 +1,7 @@
 use anyhow::Context;
 use futures::StreamExt;
 use serde::Deserialize;
+use serde_aux::prelude::*;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 
@@ -16,6 +17,9 @@ pub struct WSEvent {
     pub pano: String,
     pub heading: f64,
     pub location: Location,
+    #[serde(rename = "totalUsers")]
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub total_users: u16,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
