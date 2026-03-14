@@ -12,10 +12,12 @@ env:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
 
     steps:
     - uses: actions/checkout@v4
+    - name: Install libchafa
+      run: brew install chafa pkg-config
     - name: Build
       run: cargo build --verbose
     - name: Run tests
