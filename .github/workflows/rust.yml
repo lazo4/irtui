@@ -27,6 +27,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Install libchafa
-      run: sudo apt-get install chafa
+      run: sudo apt-get install chafa pkg-config
     - name: Build
       run: cargo build --verbose
