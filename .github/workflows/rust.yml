@@ -10,12 +10,20 @@ env:
 jobs:
   build:
 
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: ['macos-latest', 'ubuntu-latest', 'windows-latest']
 
     steps:
     - uses: actions/checkout@v4
-    - name: Install libchafa
-      run: brew install chafa pkg-config
+    - if: startsWith(matrix.os, 'ubuntu')
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libchafa-dev pkg-config libglib2.0-dev
+    - if: matrix.os == 'macos-latest'
+      run: brew install chafa
     - name: Build
       run: cargo build --verbose
     - name: Run tests
