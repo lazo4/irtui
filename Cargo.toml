@@ -1,6 +1,6 @@
 [package]
 name = "irtui"
-version = "0.1.0"
+version = "0.0.0"
 description = "A terminal user interface for the Neal.fun Internet Roadtrip"
 authors = ["ferris4096"]
 license = "MIT"
@@ -11,7 +11,10 @@ anyhow = "1.0.101"
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 image = "0.25.9"
 ratatui = "0.30.0"
-ratatui-image = { version = "10.0.5", default-features = false, features = ["crossterm", "image-defaults"] }
+ratatui-image = { version = "10.0.5", default-features = false, features = [
+	"crossterm",
+	"image-defaults",
+] }
 reqwest = { version = "0.13.2", features = ["json"] }
 regex = "1.10.0"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -27,4 +30,4 @@ chrono = "0.4.44"
 unicode-width = "0.2.2"
 
 [target.'cfg(not(windows))'.dependencies]
-ratatui-image = { version = "10.0.5"}
+ratatui-image = { version = "10.0.5" }

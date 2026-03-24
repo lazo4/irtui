@@ -6,7 +6,7 @@ use image::{GenericImage, ImageBuffer, ImageReader, Rgb, RgbImage, imageops};
 use reqwest::Client;
 use serde_json::Value;
 use tokio::task;
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 
 // All of this is adapted from Mikarific/LookoutTheWindow
 
@@ -155,6 +155,7 @@ fn decode_panoid(panoid: &str) -> Pano {
 /// Stolen from Mikarific/LookoutTheWindow
 ///
 /// TODO: make this AI slop a little less sloppy
+#[instrument(level = "debug")]
 pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMetadata> {
     let pano = decode_panoid(pano_id);
     let type_num = pano.pano_type as u8;
@@ -559,6 +560,7 @@ fn pano_to_plane(
     out
 }
 
+#[instrument(level = "debug")]
 pub async fn render_pano_from_metadata(
     meta: &PanoMetadata,
     pano: &RgbImage,

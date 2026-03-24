@@ -1,23 +1,37 @@
-use std::{cmp::Reverse, iter};
+use std::cmp::{self, Reverse, min};
 
 use chrono::Utc;
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Offset, Rect},
+    layout::{Constraint, Offset, Rect, Size},
     style::{Color, Style, Stylize},
     symbols,
     text::Line,
     widgets::{Block, BorderType, Clear, LineGauge, Padding, Paragraph, Widget, Wrap},
 };
 use ratatui_image::Image;
-use tracing::debug;
 use unicode_width::UnicodeWidthStr;
+
+const WIDE_BREAK: u16 = 92;
 
 use crate::app::App;
 
+// Compute min_width of a piece of text (kinda like css min-width I think)
+fn compute_min_width(content: &str, wrap: bool) -> u16 {
+    if wrap {
+        // If we can wrap, calculate the longest word
+        content
+            .split_whitespace()
+            .fold(0, |max, word| cmp::max(max, word.width())) as u16
+    } else {
+        content.width() as u16
+    }
+}
+
 impl Widget for &App {
-    // TODO: Better code
+    /// Render the whole UI.
     fn render(self, area: Rect, buf: &mut Buffer) {
+        // Display the current streetview frame
         if let Some(proto) = &self.cur_frame {
             let image = Image::new(proto);
             image.render(area, buf);
@@ -25,30 +39,65 @@ impl Widget for &App {
 
         if let Some(location) = &self.location {
             let content = format!("{}, {}", location.neighborhood, location.country);
-            let content_width = content.len() as u16;
-            let content_rect = if area.width > 92 {
-                Rect::new(0, 0, area.width, 5)
-                    .centered_horizontally(Constraint::Max(content_width + 4))
+            // Do this like in CSS, content, padding, border, using border-box like algorithm
+            // First compute width and min-width, then height, once wrapping is sorted out
+
+            let content_width = content.width() as u16;
+            let min_content_width = compute_min_width(&content, area.width > WIDE_BREAK);
+
+            let mut padding = if area.width > WIDE_BREAK {
+                Padding::uniform(1)
             } else {
-                Rect::new(0, 3, area.width, 3)
-                    .centered_horizontally(Constraint::Max(content_width + 4))
+                Padding::ZERO
             };
 
-            let town_name = Paragraph::new(content)
+            let preferred_box_width = content_width + padding.right + padding.left + 2; // 2 is for border
+            let min_box_width = min_content_width + padding.left + padding.right + 2;
+
+            let box_width = cmp::min(cmp::max(min_box_width, area.width / 2), preferred_box_width);
+
+            // Now for height
+
+            // If we didn't wrap
+            let content_height = if preferred_box_width <= box_width {
+                1
+            } else {
+                // We wrapped, for now assume a height of 2
+                // TODO: fix this
+                2
+            };
+
+            let box_height = content_height + padding.top + padding.bottom + 2; // 2 border that is
+
+            let box_rect = if area.width > WIDE_BREAK {
+                // Wide layout
+                Rect::new(0, 0, area.width, box_height)
+                    .centered_horizontally(Constraint::Max(box_width)) // Width is shrink to fit
+            } else {
+                // Narrow layout
+                Rect::new(0, 4, area.width, box_height)
+                    .centered_horizontally(Constraint::Max(box_width)) // Width is shrink to fit
+            };
+
+            let mut town_name = Paragraph::new(content)
                 .style(Style::default().bg(Color::Rgb(0, 132, 48)).fg(Color::White))
                 .centered()
                 .bold()
                 .block(
                     Block::bordered()
                         .border_type(BorderType::Rounded)
-                        .padding(Padding::vertical(if area.width > 92 { 1 } else { 0 })),
+                        .padding(padding),
                 );
 
-            Clear.render(content_rect, buf);
+            if area.width > WIDE_BREAK {
+                town_name = town_name.wrap(Wrap { trim: true });
+            }
 
-            town_name.render(content_rect, buf);
+            Clear.render(box_rect, buf);
 
-            let content_rect = Rect::new(0, content_rect.bottom(), area.width, 3)
+            town_name.render(box_rect, buf);
+
+            let content_rect = Rect::new(0, box_rect.bottom(), area.width, 3)
                 .centered_horizontally(Constraint::Max(location.road.len() as u16 + 2));
 
             let street_name = Paragraph::new(location.road.clone())
@@ -103,11 +152,9 @@ impl Widget for &App {
             vote_counts.sort_by_key(|(idx, count)| Reverse((**count, **idx)));
             let total = vote_counts
                 .iter()
-                .map(|(idx, count)| **count)
+                .map(|(_, count)| **count)
                 .sum::<u16>()
                 .max(1);
-
-            debug!("Total votes: {total}");
 
             let counts_rect = inner_rect.offset(Offset::new(0, 3));
 
@@ -131,14 +178,10 @@ impl Widget for &App {
                 }
                 .to_string();
                 let ratio = **count as f64 / total as f64;
-                debug!("Padding .{emoji}. Width: {}", emoji.width());
-                emoji.extend(iter::repeat(" ").take(2 - emoji.width()));
-                debug!("To .{emoji}.");
+                emoji.extend(std::iter::repeat_n(" ", 2 - emoji.width()));
 
                 let text = format!("{emoji} {count} votes");
                 let percentage = format!("{}%", (ratio * 100.0).round());
-
-                debug!("Text: {}", &text);
 
                 let text = Paragraph::new(text).left_aligned().black();
                 let percent = Paragraph::new(percentage).right_aligned().black();
@@ -163,11 +206,19 @@ impl Widget for &App {
                     text_rect.height,
                 );
 
-                debug!("Text rect: {text_rect:?}");
                 text.render(text_rect, buf);
                 percent.render(text_rect, buf);
                 gauge.render(gauge_rect, buf);
             }
         }
     }
+}
+
+#[test]
+fn test_min_width() {
+    assert_eq!(compute_min_width("123 1234", true), 4);
+    assert_eq!(
+        compute_min_width("Town of East Hampton, United States of America", true),
+        8
+    );
 }
