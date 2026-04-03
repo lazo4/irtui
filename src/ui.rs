@@ -168,11 +168,11 @@ impl Widget for &App {
                         let aro_heading = self.vote_options[**idx as usize].heading;
                         let heading_diff = aro_heading - heading;
                         match heading_diff.round() as i16 {
-                            -102..-67 => "⬅", // TODO: Better emoji support
-                            -67..-22 => "↖",
-                            -22..23 => "⬆",
-                            23..68 => "↗",
-                            68..102 => "➡︎",
+                            -102..-67 => "⬅️", // TODO: Better emoji support
+                            -67..-22 => "↖️",
+                            -22..23 => "⬆️",
+                            23..68 => "↗️",
+                            68..102 => "➡️",
                             _ => "",
                         }
                     }

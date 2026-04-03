@@ -13,6 +13,7 @@ use ratatui_image::protocol::Protocol;
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, info};
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum PanoRequest {
     // Window was resized, re-render pano, using the cached tiles
     Resize(u16, u16),
@@ -56,21 +57,21 @@ pub struct App {
 
 impl Default for App {
     fn default() -> Self {
-        App::new(EventHandler::new())
-    }
-}
-
-impl App {
-    /// Constructs a new instance of [`App`].
-    pub fn new(evt_handler: EventHandler) -> Self {
-        // Spawn the pano rendering thread.
+        // Spawn the default pano rendering task
+        let evt_handler = EventHandler::new();
         let (pano_tx, pano_rx) = tokio::sync::mpsc::channel::<PanoRequest>(10); // Idk why ten but why not?
 
         let evt_sender = evt_handler.sender.clone(); // So that rendering task can report back
 
         debug!("Spawning pano rendering task");
         spawn_rendering_task(pano_rx, evt_sender);
+        App::new(evt_handler, pano_tx)
+    }
+}
 
+impl App {
+    /// Constructs a new instance of [`App`], given and event source and a pano sender
+    pub fn new(evt_handler: EventHandler, pano_tx: Sender<PanoRequest>) -> Self {
         Self {
             running: true,
             current_pano: None,
@@ -184,8 +185,19 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+
+    use crate::roadtrip::WSEvent;
+
     use super::*;
     use pretty_assertions::assert_eq;
+    use tokio::sync::mpsc::{Receiver, UnboundedSender};
+
+    fn new_test_app() -> (App, UnboundedSender<Event>, Receiver<PanoRequest>) {
+        let evt_handler = EventHandler::new_deterministic();
+        let (pano_tx, pano_rx) = tokio::sync::mpsc::channel::<PanoRequest>(10);
+        let sender = evt_handler.sender.clone();
+        (App::new(evt_handler, pano_tx), sender, pano_rx)
+    }
 
     #[tokio::test]
     #[ignore = "uses crossterm backend"]
@@ -204,9 +216,8 @@ mod tests {
     /// This next series of tests verifies how the app reacts to external events
     #[tokio::test]
     async fn test_app_key_evts() {
-        let handler = EventHandler::new_deterministic();
-        let sender = handler.sender.clone();
-        let mut app = App::new(handler);
+        // Fake handler for testing
+        let (mut app, sender, _) = new_test_app();
 
         // Send q event
         sender
@@ -221,5 +232,68 @@ mod tests {
         app.handle_events().await.unwrap();
 
         assert!(!app.running);
+    }
+
+    #[tokio::test]
+    async fn test_app_resize() {
+        let (mut app, sender, mut pano_rx) = new_test_app();
+
+        // Send resize event
+        sender
+            .send(Event::Crossterm(crossterm::event::Event::Resize(100, 50)))
+            .unwrap();
+        sender
+            .send(Event::Crossterm(crossterm::event::Event::Resize(50, 50)))
+            .unwrap(); // Test batch resize
+        sender.send(Event::Tick).unwrap(); // To break the event loop and process the resize event
+        app.handle_events().await.unwrap();
+
+        assert_eq!(pano_rx.recv().await.unwrap(), PanoRequest::Resize(50, 50));
+    }
+
+    #[tokio::test]
+    async fn test_app_roadtrip_evt() {
+        let (mut app, sender, mut pano_rx) = new_test_app();
+        let end_time = Utc::now() + chrono::Duration::seconds(7);
+        let event = Event::RoadTrip(RoadtripEvent::WS(WSEvent {
+            pano: "tXVQoL_JtBEBbV7LYKW_2A".to_string(),
+            heading: 90.0,
+            location: Location {
+                road: "Tremont St".to_string(),
+                neighborhood: "Boston".to_string(),
+                state: "Massachusetts".to_string(),
+                county: "Suffolk".to_string(),
+                country: "United States of America".to_string(),
+            },
+            total_users: 220,
+            options: vec![
+                VoteOption {
+                    heading: 110.0,
+                    pano: "CAoSFkNJSE0wb2dLRUlDQWdJQ0U5SVBWR1E.".to_string(),
+                    description: Some("Local Business".to_string()),
+                },
+                VoteOption {
+                    heading: 90.0,
+                    pano: "LHa3O3Oo9bhVVJE1dtbsfg".to_string(),
+                    description: Some("Tremont St".to_string()),
+                },
+            ],
+            vote_counts: HashMap::from([(-1, 3), (-2, 2), (0, 8), (1, 3)]),
+            end_time,
+        }));
+        sender.send(event).unwrap();
+        sender.send(Event::Tick).unwrap(); // Break the loop
+
+        app.handle_events().await.unwrap();
+
+        assert_eq!(app.users_online, 220);
+        assert_eq!(app.vote_options.len(), 2);
+        assert_eq!(app.vote_counts.get(&-1), Some(&3));
+        assert_eq!(app.vote_counts.get(&-2), Some(&2));
+        assert_eq!(app.vote_ends, Some(end_time));
+        assert_eq!(
+            pano_rx.recv().await.unwrap(),
+            PanoRequest::Render("tXVQoL_JtBEBbV7LYKW_2A".to_string(), 90.0)
+        );
     }
 }
