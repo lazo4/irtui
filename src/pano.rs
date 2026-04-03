@@ -3,10 +3,17 @@ use std::{f32::consts::PI, io::Cursor, sync::Arc, time::Instant};
 use anyhow::anyhow;
 use base64::{Engine as _, engine::general_purpose};
 use image::{GenericImage, ImageBuffer, ImageReader, Rgb, RgbImage, imageops};
+use ratatui::layout::Rect;
+use ratatui_image::{Resize, picker::Picker};
 use reqwest::Client;
 use serde_json::Value;
 use tokio::task;
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, warn};
+
+use crate::{
+    app::PanoRequest,
+    event::{AppEvent, Event},
+};
 
 // All of this is adapted from Mikarific/LookoutTheWindow
 
@@ -592,10 +599,136 @@ pub fn render_pano_from_metadata(
     Ok(rendered)
 }
 
+pub fn spawn_rendering_task(
+    mut pano_rx: tokio::sync::mpsc::Receiver<PanoRequest>,
+    evt_sender: tokio::sync::mpsc::UnboundedSender<Event>,
+) {
+    tokio::task::spawn(async move {
+        let picker = Picker::halfblocks();
+
+        let mut cur_size = crossterm::terminal::size().expect("Failed to query terminal size");
+        let font_size = picker.font_size();
+
+        let mut meta_cache = None;
+
+        let mut equirect_cache = None;
+
+        let mut cur_heading = 0.0;
+
+        let mut cur_panoid = String::new();
+
+        while let Some(request) = pano_rx.recv().await {
+            match request {
+                PanoRequest::Resize(width, height) => {
+                    if let Some(meta) = &meta_cache
+                        && let Some(equirect) = &equirect_cache
+                    {
+                        info!("Resizing image from {cur_size:?} to ({width}, {height})");
+                        // Handle resize event
+                        if cur_size == (width, height) {
+                            continue; // No need to re-render if size didn't change
+                        }
+                        cur_size = (width, height);
+                        // Convert characters to pixels
+                        let width = width * font_size.0;
+                        let height = height * font_size.1;
+
+                        let pano = match render_pano_from_metadata(
+                            meta,
+                            equirect,
+                            cur_heading as f32,
+                            width as u32,
+                            height as u32,
+                        ) {
+                            Ok(pano) => pano,
+                            Err(err) => {
+                                warn!("Failed to render pano {cur_panoid}: {err:#?}");
+                                continue;
+                            }
+                        };
+
+                        let protocol = match picker.new_protocol(
+                            pano.into(),
+                            Rect::new(0, 0, width, height),
+                            Resize::Crop(None),
+                        ) {
+                            Ok(proto) => proto,
+                            Err(err) => {
+                                warn!("Failed to create protocol for pano {cur_panoid}: {err:?}");
+                                continue;
+                            }
+                        };
+
+                        let _ = evt_sender.send(Event::App(AppEvent::NewFrame(protocol)));
+                    }
+                }
+                PanoRequest::Render(panoid, heading) => {
+                    cur_panoid = panoid.clone();
+                    cur_heading = heading;
+                    // Handle render event: fetch tiles and render into an image buffer.
+                    let width = cur_size.0 * font_size.0;
+                    let height = cur_size.1 * font_size.1;
+
+                    // Render the pano
+                    let meta = match get_pano_metadata_from_id(&panoid).await {
+                        Ok(ok) => ok,
+                        Err(err) => {
+                            warn!("Failed to render pano {panoid}: {err:#?}");
+                            continue;
+                        }
+                    };
+
+                    let equirect = match load_equirect(&meta).await {
+                        Ok(ok) => ok,
+                        Err(err) => {
+                            warn!(
+                                "Failed to render pano {panoid}, failed to fetch equirect: {err:#?}"
+                            );
+                            continue;
+                        }
+                    };
+
+                    meta_cache = Some(meta.clone());
+                    equirect_cache = Some(equirect.clone());
+
+                    let pano = match render_pano_from_metadata(
+                        &meta,
+                        &equirect,
+                        heading as f32,
+                        width as u32,
+                        height as u32,
+                    ) {
+                        Ok(pano) => pano,
+                        Err(err) => {
+                            warn!("Failed to render pano {panoid}: {err:#?}");
+                            continue;
+                        }
+                    };
+
+                    let protocol = match picker.new_protocol(
+                        pano.into(),
+                        Rect::new(0, 0, width, height),
+                        Resize::Crop(None),
+                    ) {
+                        Ok(proto) => proto,
+                        Err(err) => {
+                            warn!("Failed to create protocol for pano {panoid}: {err:?}");
+                            continue;
+                        }
+                    };
+
+                    let _ = evt_sender.send(Event::App(AppEvent::NewFrame(protocol)));
+                }
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use pretty_assertions::{assert_eq, assert_ne};
+    use tokio::sync::mpsc::{channel, unbounded_channel};
 
     #[test]
     fn test_decode_panoid() {
@@ -611,7 +744,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "uses the network"]
     async fn test_pano_fetch() {
         let meta = get_pano_metadata_from_id("tXVQoL_JtBEBbV7LYKW_2A")
             .await
@@ -694,5 +827,24 @@ mod tests {
 
         assert_eq!(rendered.width(), 4);
         assert_eq!(rendered.height(), 4);
+    }
+
+    #[tokio::test]
+    #[ignore = "Uses the network"]
+    async fn test_rendering_task() {
+        let (pano_tx, pano_rx) = channel(10); // Who cares?
+        let (evt_tx, mut evt_rx) = unbounded_channel();
+
+        spawn_rendering_task(pano_rx, evt_tx);
+
+        pano_tx
+            .send(PanoRequest::Render(
+                "tXVQoL_JtBEBbV7LYKW_2A".to_string(),
+                0.0,
+            ))
+            .await
+            .unwrap();
+
+        if let Some(Event::App(AppEvent::NewFrame(_))) = evt_rx.recv().await {}
     }
 }

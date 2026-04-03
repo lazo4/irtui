@@ -153,6 +153,16 @@ impl Default for EventHandler {
 }
 
 #[cfg(test)]
+impl EventHandler {
+    /// Returns an event handler that can be entirely controlled from the outside, for testing
+    pub fn new_deterministic() -> Self {
+        let (sender, receiver) = mpsc::unbounded_channel();
+
+        Self { sender, receiver }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::time::Instant;
 
@@ -173,9 +183,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "uses network and crossterm backend"]
     async fn test_event_handler() {
-        let mut handler = EventHandler::new();
+        let mut handler = EventHandler::default();
         let _ = handler.next().await;
         handler.send(AppEvent::Quit);
         // Wait for a WS Event and a Quit event, max five secs

@@ -109,7 +109,7 @@ mod tests {
     use tokio::time::{Duration, timeout};
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "uses the network"]
     async fn smoke_test_real_ws() {
         let mut backend = WSBackend::new().await.unwrap();
 

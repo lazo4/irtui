@@ -38,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
     info!("Initializing terminal");
     let terminal = ratatui::init();
     info!("Lauching app");
-    let result = App::new().run(terminal).await;
+    let result = App::default().run(terminal).await;
     info!("Exiting...");
     ratatui::restore();
     result

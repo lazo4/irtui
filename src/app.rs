@@ -2,16 +2,16 @@ use std::collections::HashMap;
 
 use crate::{
     event::{AppEvent, Event, EventHandler},
-    pano::{get_pano_metadata_from_id, load_equirect, render_pano_from_metadata},
+    pano::spawn_rendering_task,
     roadtrip::{Location, RoadtripEvent, VoteOption},
 };
 
 use chrono::{DateTime, Utc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{DefaultTerminal, layout::Rect};
-use ratatui_image::{Resize, picker::Picker, protocol::Protocol};
+use ratatui::DefaultTerminal;
+use ratatui_image::protocol::Protocol;
 use tokio::sync::mpsc::Sender;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 pub enum PanoRequest {
     // Window was resized, re-render pano, using the cached tiles
@@ -26,164 +26,50 @@ pub struct App {
     /// Is the application running?
     pub running: bool,
 
-    pub current_pano: Option<(String, f64)>, // Current panoid + heading
-    // Location info like town name, street name, etc...
+    /// Current panoid + heading
+    pub current_pano: Option<(String, f64)>,
+
+    /// Location info like town name, street name, etc...
     pub location: Option<Location>,
 
+    /// Current rendered pano frame, to be rendered by ratatui-image
     pub cur_frame: Option<Protocol>,
 
-    /// Event handler.
+    /// Event handler, coordinates and merges varous event sources
     pub events: EventHandler,
+
     // For sending pano render requests
     pub pano_tx: Sender<PanoRequest>,
 
+    /// Number of users currently online
     pub users_online: u16,
 
+    /// The current vote options available, aka, the arrows
     pub vote_options: Vec<VoteOption>,
 
+    /// The vote counts for each option
     pub vote_counts: HashMap<i8, u16>,
 
+    /// When the voting period ends
     pub vote_ends: Option<DateTime<Utc>>,
 }
 
 impl Default for App {
     fn default() -> Self {
-        App::new()
+        App::new(EventHandler::new())
     }
 }
 
 impl App {
     /// Constructs a new instance of [`App`].
-    pub fn new() -> Self {
+    pub fn new(evt_handler: EventHandler) -> Self {
         // Spawn the pano rendering thread.
-        let (pano_tx, mut pano_rx) = tokio::sync::mpsc::channel::<PanoRequest>(10); // Idk why ten but why not?
+        let (pano_tx, pano_rx) = tokio::sync::mpsc::channel::<PanoRequest>(10); // Idk why ten but why not?
 
-        let evt_handler = EventHandler::new();
-
-        let evt_sender = evt_handler.sender.clone();
+        let evt_sender = evt_handler.sender.clone(); // So that rendering task can report back
 
         debug!("Spawning pano rendering task");
-        tokio::task::spawn(async move {
-            let picker = Picker::halfblocks();
-
-            let mut cur_size = crossterm::terminal::size().expect("Failed to query terminal size");
-            let font_size = picker.font_size();
-
-            let mut meta_cache = None;
-
-            let mut equirect_cache = None;
-
-            let mut cur_heading = 0.0;
-
-            let mut cur_panoid = String::new();
-
-            while let Some(request) = pano_rx.recv().await {
-                match request {
-                    PanoRequest::Resize(width, height) => {
-                        if let Some(meta) = &meta_cache
-                            && let Some(equirect) = &equirect_cache
-                        {
-                            info!("Resizing image from {cur_size:?} to ({width}, {height})");
-                            // Handle resize event
-                            if cur_size == (width, height) {
-                                continue; // No need to re-render if size didn't change
-                            }
-                            cur_size = (width, height);
-                            // Convert characters to pixels
-                            let width = width * font_size.0;
-                            let height = height * font_size.1;
-
-                            let pano = match render_pano_from_metadata(
-                                meta,
-                                equirect,
-                                cur_heading as f32,
-                                width as u32,
-                                height as u32,
-                            ) {
-                                Ok(pano) => pano,
-                                Err(err) => {
-                                    warn!("Failed to render pano {cur_panoid}: {err:#?}");
-                                    continue;
-                                }
-                            };
-
-                            let protocol = match picker.new_protocol(
-                                pano.into(),
-                                Rect::new(0, 0, width, height),
-                                Resize::Crop(None),
-                            ) {
-                                Ok(proto) => proto,
-                                Err(err) => {
-                                    warn!(
-                                        "Failed to create protocol for pano {cur_panoid}: {err:?}"
-                                    );
-                                    continue;
-                                }
-                            };
-
-                            let _ = evt_sender.send(Event::App(AppEvent::NewFrame(protocol)));
-                        }
-                    }
-                    PanoRequest::Render(panoid, heading) => {
-                        cur_panoid = panoid.clone();
-                        cur_heading = heading;
-                        // Handle render event: fetch tiles and render into an image buffer.
-                        let width = cur_size.0 * font_size.0;
-                        let height = cur_size.1 * font_size.1;
-
-                        // Render the pano
-                        let meta = match get_pano_metadata_from_id(&panoid).await {
-                            Ok(ok) => ok,
-                            Err(err) => {
-                                warn!("Failed to render pano {panoid}: {err:#?}");
-                                continue;
-                            }
-                        };
-
-                        let equirect = match load_equirect(&meta).await {
-                            Ok(ok) => ok,
-                            Err(err) => {
-                                warn!(
-                                    "Failed to render pano {panoid}, failed to fetch equirect: {err:#?}"
-                                );
-                                continue;
-                            }
-                        };
-
-                        meta_cache = Some(meta.clone());
-                        equirect_cache = Some(equirect.clone());
-
-                        let pano = match render_pano_from_metadata(
-                            &meta,
-                            &equirect,
-                            heading as f32,
-                            width as u32,
-                            height as u32,
-                        ) {
-                            Ok(pano) => pano,
-                            Err(err) => {
-                                warn!("Failed to render pano {panoid}: {err:#?}");
-                                continue;
-                            }
-                        };
-
-                        let protocol = match picker.new_protocol(
-                            pano.into(),
-                            Rect::new(0, 0, width, height),
-                            Resize::Crop(None),
-                        ) {
-                            Ok(proto) => proto,
-                            Err(err) => {
-                                warn!("Failed to create protocol for pano {panoid}: {err:?}");
-                                continue;
-                            }
-                        };
-
-                        let _ = evt_sender.send(Event::App(AppEvent::NewFrame(protocol)));
-                    }
-                }
-            }
-        });
+        spawn_rendering_task(pano_rx, evt_sender);
 
         Self {
             running: true,
@@ -293,5 +179,46 @@ impl App {
     /// Set running to false to quit the application.
     pub fn quit(&mut self) {
         self.running = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[tokio::test]
+    async fn test_app_default() {
+        let app = App::default();
+        assert!(app.running);
+        assert!(app.current_pano.is_none());
+        assert!(app.location.is_none());
+        assert!(app.cur_frame.is_none());
+        assert_eq!(app.users_online, 0);
+        assert!(app.vote_options.is_empty());
+        assert!(app.vote_counts.is_empty());
+        assert!(app.vote_ends.is_none());
+    }
+
+    /// This next series of tests verifies how the app reacts to external events
+    #[tokio::test]
+    async fn test_app_key_evts() {
+        let handler = EventHandler::new_deterministic();
+        let sender = handler.sender.clone();
+        let mut app = App::new(handler);
+
+        // Send q event
+        sender
+            .send(Event::Crossterm(crossterm::event::Event::Key(
+                KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE),
+            )))
+            .unwrap();
+        sender.send(Event::Tick).unwrap(); // To break the event loop and process the quit event
+        app.handle_events().await.unwrap();
+
+        sender.send(Event::Tick).unwrap();
+        app.handle_events().await.unwrap();
+
+        assert!(!app.running);
     }
 }
