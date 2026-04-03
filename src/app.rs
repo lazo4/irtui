@@ -8,7 +8,7 @@ use crate::{
 
 use chrono::{DateTime, Utc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::DefaultTerminal;
+use ratatui::{Terminal, prelude::*};
 use ratatui_image::protocol::Protocol;
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, info};
@@ -71,6 +71,7 @@ impl Default for App {
 
 impl App {
     /// Constructs a new instance of [`App`], given and event source and a pano sender
+    #[must_use]
     pub fn new(evt_handler: EventHandler, pano_tx: Sender<PanoRequest>) -> Self {
         Self {
             running: true,
@@ -87,7 +88,13 @@ impl App {
     }
 
     /// Run the application's main loop.
-    pub async fn run(mut self, mut terminal: DefaultTerminal) -> anyhow::Result<()> {
+    pub async fn run<B: Backend + Send + 'static>(
+        mut self,
+        mut terminal: Terminal<B>,
+    ) -> anyhow::Result<()>
+    where
+        B::Error: Send + Sync,
+    {
         while self.running {
             debug!("Rendering");
             terminal.draw(|frame| frame.render_widget(&self, frame.area()))?;
@@ -185,7 +192,6 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-
     use crate::roadtrip::WSEvent;
 
     use super::*;
@@ -295,5 +301,20 @@ mod tests {
             pano_rx.recv().await.unwrap(),
             PanoRequest::Render("tXVQoL_JtBEBbV7LYKW_2A".to_string(), 90.0)
         );
+    }
+
+    #[tokio::test]
+    async fn test_app_run() {
+        let (app, sender, _) = new_test_app();
+
+        // Run the app in the background
+        let backend = backend::TestBackend::new(80, 30);
+        let terminal = Terminal::new(backend).unwrap();
+        let app_handle = tokio::spawn(async move { app.run(terminal).await });
+        sender.send(Event::App(AppEvent::Quit)).unwrap(); // To break the event loop immediately
+        sender.send(Event::Tick).unwrap(); // To break the event loop immediately
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), app_handle).await;
+
+        assert!(result.is_ok());
     }
 }

@@ -155,6 +155,7 @@ impl Default for EventHandler {
 #[cfg(test)]
 impl EventHandler {
     /// Returns an event handler that can be entirely controlled from the outside, for testing
+    #[must_use]
     pub fn new_deterministic() -> Self {
         let (sender, receiver) = mpsc::unbounded_channel();
 
