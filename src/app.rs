@@ -239,7 +239,9 @@ impl App {
 
                 self.hivechat.messages.extend(evt.chat_events);
 
-                if self.current_pano != Some((evt.pano.clone(), evt.heading)) {
+                if self.current_pano == Some((evt.pano.clone(), evt.heading)) {
+                    debug!("Panorama unchanged, skipping render");
+                } else {
                     // Update current pano and trigger a render request.
                     info!(
                         panoid = %panoid,
@@ -251,8 +253,6 @@ impl App {
                     self.pano_tx
                         .send(PanoRequest::Render(panoid, evt.heading))
                         .await?;
-                } else {
-                    debug!("Panorama unchanged, skipping render");
                 }
             }
         }
@@ -273,7 +273,7 @@ impl App {
             }
             KeyCode::Char('c') => {
                 debug!("Toggling HiveChat display");
-                self.hivechat.hidden = !self.hivechat.hidden
+                self.hivechat.hidden = !self.hivechat.hidden;
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 self.hivechat.scroll_offset = self.hivechat.scroll_offset.saturating_sub(1); // Scroll down

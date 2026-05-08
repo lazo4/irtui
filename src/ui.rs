@@ -89,7 +89,7 @@ impl App {
                     .neighborhood
                     .as_ref()
                     .or(location.county.as_ref())
-                    .unwrap_or(&"".into()),
+                    .unwrap_or(&String::new()),
                 location.country
             );
 
@@ -568,7 +568,7 @@ mod tests {
         let (tx, _) = tokio::sync::mpsc::channel(100);
         let mut app = App::new(EventHandler::new_deterministic(), tx, Vec::new());
 
-        app.vote_ends = Some(Utc::now().timestamp_millis() as u64 + 7000);
+        app.vote_ends = Some(Utc::now().timestamp_millis() as u64 + 7200);
         app.current_pano = Some((String::new(), 90.0));
         app.vote_options = vec![
             crate::roadtrip::VoteOption {
