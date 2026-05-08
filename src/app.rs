@@ -23,12 +23,16 @@ pub enum PanoRequest {
     Render(String, f64), // panoid + heading
 }
 
+#[derive(Debug, Default)]
 pub struct Hivechat {
     /// Wether the sidebar is hidden
     pub hidden: bool,
 
     /// The current messages the chat is displaying
     pub messages: Vec<ChatEvent>,
+
+    /// Number of lines the user scrolled up, reset every time a new message arrives
+    pub scroll_offset: u16,
 }
 
 /// Application
@@ -114,7 +118,7 @@ impl App {
         Ok(App::new(evt_handler, pano_tx, response))
     }
 
-    /// Constructs a new instance of [`App`], given an event source, pano sender and initial chat messages
+    /// Construct a new instance of [`App`], given an event source, pano sender and initial chat messages
     #[must_use]
     #[instrument(skip_all, level = Level::DEBUG)]
     pub fn new(
@@ -134,8 +138,8 @@ impl App {
             vote_counts: HashMap::new(),
             vote_ends: None,
             hivechat: Hivechat {
-                hidden: false,
                 messages,
+                ..Hivechat::default()
             },
         }
     }
@@ -154,7 +158,7 @@ impl App {
     {
         info!("Starting app main loop");
         while self.running {
-            terminal.draw(|frame| frame.render_widget(&self, frame.area()))?;
+            terminal.draw(|frame| frame.render_widget(&mut self, frame.area()))?;
             self.handle_events().await?;
         }
         info!("App main loop ended");
@@ -229,6 +233,10 @@ impl App {
                 self.vote_options = evt.options;
                 self.vote_ends = Some(evt.end_time);
 
+                if !evt.chat_events.is_empty() {
+                    self.hivechat.scroll_offset = 0; // Go to bottom when new message arrives
+                }
+
                 self.hivechat.messages.extend(evt.chat_events);
 
                 if self.current_pano != Some((evt.pano.clone(), evt.heading)) {
@@ -266,6 +274,12 @@ impl App {
             KeyCode::Char('c') => {
                 debug!("Toggling HiveChat display");
                 self.hivechat.hidden = !self.hivechat.hidden
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.hivechat.scroll_offset = self.hivechat.scroll_offset.saturating_sub(1); // Scroll down
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.hivechat.scroll_offset += 1; // Scroll up
             }
             _ => debug!(code = ?key_event.code, "Unhandled key event"),
         }

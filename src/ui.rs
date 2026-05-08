@@ -85,7 +85,11 @@ impl App {
         if let Some(location) = &self.location {
             let content = format!(
                 "{}, {}",
-                location.neighborhood.as_ref().or(location.county.as_ref()).unwrap_or(&"".into()),
+                location
+                    .neighborhood
+                    .as_ref()
+                    .or(location.county.as_ref())
+                    .unwrap_or(&"".into()),
                 location.country
             );
 
@@ -314,7 +318,7 @@ impl App {
     }
 }
 
-impl Widget for &App {
+impl Widget for &mut App {
     /// Render the whole UI.
     #[instrument(skip(self, buf), level = Level::TRACE)]
     fn render(self, area: Rect, buf: &mut Buffer) {
@@ -326,7 +330,7 @@ impl Widget for &App {
     }
 }
 
-impl Widget for &Hivechat {
+impl Widget for &mut Hivechat {
     fn render(self, area: Rect, buf: &mut Buffer)
     where
         Self: Sized,
@@ -348,11 +352,19 @@ impl Widget for &Hivechat {
                     ])
                 })
                 .collect();
+
             let messages = Paragraph::new(text)
-                .bg(Color::White)
+                .bg(Color::Rgb(255, 255, 255))
                 .wrap(Wrap { trim: false });
-            let y_offset = (messages.line_count(content_rect.width) as u16)
-                .saturating_sub(content_rect.height);
+            let num_lines = messages.line_count(content_rect.width) as u16;
+
+            let max_scroll = num_lines.saturating_sub(content_rect.height);
+            self.scroll_offset = self.scroll_offset.min(max_scroll);
+
+            let y_offset = num_lines
+                .saturating_sub(content_rect.height)
+                .saturating_sub(self.scroll_offset);
+
             let messages = messages.scroll((y_offset, 0));
 
             Clear.render(content_rect, buf);
@@ -401,7 +413,7 @@ mod tests {
     #[test]
     fn test_full_render() {
         let (tx, _) = tokio::sync::mpsc::channel(100);
-        let app = App::new(EventHandler::new_deterministic(), tx, Vec::new());
+        let mut app = App::new(EventHandler::new_deterministic(), tx, Vec::new());
 
         let area = Rect::new(0, 0, 100, 50);
         let mut buf = Buffer::empty(area);
@@ -471,7 +483,7 @@ mod tests {
             country: "United States of America".to_string(),
             road: "Main Street".to_string(),
             county: Some("Suffolk County".to_string()), // Random
-            state: "New York".to_string(),        // Random
+            state: "New York".to_string(),              // Random
         });
 
         let area = Rect::new(0, 0, 10, 11); // Narrow, this is practical, not realistic
@@ -509,7 +521,7 @@ mod tests {
             country: "United States of America".to_string(),
             road: "Very very loooong street street street street name name".to_string(),
             county: Some("Suffolk County".to_string()), // Random
-            state: "New York".to_string(),        // Random
+            state: "New York".to_string(),              // Random
         });
 
         let area = Rect::new(0, 0, WIDE_BREAK, 11); // Test wide layout
