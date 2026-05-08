@@ -8,9 +8,7 @@ If you're new to IRT, please check out the [(un)official guide](https://bit.ly/u
 
 ## Screenshots
 
-<img width="559" height="482" alt="Capture d’écran 2026-04-25 à 18 19 50" src="https://github.com/user-attachments/assets/d2baa649-bd2f-4c2c-a4f7-40452623b3f3" />
-<img width="1000" height="686" alt="Capture d’écran 2026-04-25 à 18 18 28" src="https://github.com/user-attachments/assets/5fdc8405-aae0-4593-9a6a-4f479401cc8e" />
-<img width="1000" height="686" alt="Capture d’écran 2026-04-25 à 18 18 23" src="https://github.com/user-attachments/assets/8c6bf809-cf7d-4239-9140-e61f7017501c" />
+![Demo](demo/demo.gif)
 
 Ngl, these screenshots are optimistic. I ran them on macos, inside the vscode terminal, but terminal support and fonts vary wildly, so the image may display differently and and be kinda glitchy. Sadly, I haven't found a way to get chafa working on windows, so for now windows users will just see the image rendered with halfblocks.
 
