@@ -143,7 +143,11 @@ impl App {
         can_wrap: bool,
     ) {
         let mut town_name = Paragraph::new(content)
-            .style(Style::default().bg(Color::Rgb(0, 132, 48)).fg(Color::White))
+            .style(
+                Style::default()
+                    .bg(Color::Rgb(0, 132, 48))
+                    .fg(Color::Rgb(255, 255, 255)),
+            )
             .centered()
             .bold()
             .block(
@@ -163,7 +167,11 @@ impl App {
     /// Render the white box with the street name in the given `area`
     fn render_street_box(area: Rect, buf: &mut Buffer, road: &str) {
         let street_name = Paragraph::new(road)
-            .style(Style::default().bg(Color::White).fg(Color::Black))
+            .style(
+                Style::default()
+                    .bg(Color::Rgb(255, 255, 255))
+                    .fg(Color::Black),
+            )
             .centered()
             .wrap(Wrap { trim: false })
             .block(Block::bordered().border_type(BorderType::Rounded));
@@ -174,7 +182,7 @@ impl App {
     /// Render the box with the current drivers count in the top right corner of the rect
     fn render_drivers_online(&self, area: Rect, buf: &mut Buffer) {
         let content: Line = vec![
-            "● ".red(),
+            "● ".fg(Color::Rgb(255, 0, 0)),
             format!("{} drivers online", self.users_online).black(),
         ]
         .into();
@@ -370,16 +378,24 @@ impl Widget for &mut Hivechat {
             Clear.render(content_rect, buf);
             messages.render(content_rect, buf);
         }
-        buf.set_string(
-            if self.hidden {
-                area.width - 2
-            } else {
-                content_rect.x - 2
-            },
-            content_rect.y,
-            "💬",
-            Style::default().bg(Color::White),
-        );
+
+        let can_draw = if self.hidden {
+            area.width >= 2
+        } else {
+            content_rect.x >= 2
+        };
+        if can_draw {
+            buf.set_string(
+                if self.hidden {
+                    area.width - 2
+                } else {
+                    content_rect.x - 2
+                },
+                content_rect.y,
+                "💬",
+                Style::default().bg(Color::Rgb(255, 255, 255)),
+            );
+        }
     }
 }
 
