@@ -20,13 +20,12 @@ image = { version = "0.25.9", default-features = false, features = ["jpeg"] }
 ratatui-image = { version = "10.0.5", default-features = false, features = [
 	"crossterm",
 ] }
-regex = "1.10.0"
+futures = { version = "0.3.32", default-features = false }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 tokio = { version = "1.51.0", features = ["rt-multi-thread", "macros"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.22"
-futures = "0.3.32"
 base64 = "0.22.1"
 serde-aux = "4.7.0"
 chrono = "0.4.44"
