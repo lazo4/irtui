@@ -1,8 +1,13 @@
 name: Release
 
 on:
-  release:
-    types: [created]
+  push:
+    branches: [master]
+    tags:
+      - "v*.*.*"
+    paths:
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -62,6 +67,11 @@ jobs:
       with:
         path: ./bins
         
-    - name: Publish built binary to GitHub releases
+    - if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+      run: gh release create ${{ github.ref_name }} --notes-from-tag ./bins/**/*
+    - if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v'))
       run: |
-        gh release upload ${{ github.ref_name }} ./bins/**/*
+        git tag -f nightly
+        git push origin tag nightly
+        gh release delete nightly --yes || true
+        gh release create nightly --prerelease --notes "" ./bins/**/*
