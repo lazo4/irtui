@@ -1,6 +1,6 @@
 [package]
 name = "irtui"
-version = "0.1.0"
+version = "0.1.1"
 description = "A terminal user interface for the Neal.fun Internet Roadtrip"
 authors = ["lazo4"]
 license = "MIT"
