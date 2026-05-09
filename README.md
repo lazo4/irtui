@@ -16,9 +16,9 @@ Actual results may vary, according to fonts and terminal support.
 
 - [x] Bare bones: pano rendering and vote counts
 - [x] Support HiveChat
+- [ ] Display the odometer
 - [ ] Support honking
 - [ ] Support voting (See [note](#a-note-about-voting))
-- [ ] Display the odometer
 - [ ] Display the minimap
 - [ ] Display and play the radio
 - [ ] Add a link to the main site and to the discord
@@ -64,13 +64,13 @@ cargo build --release --features <build-features>
 ```
 The binary is now in `target/release/irtui`
 
+## A note about voting
+
+I'm not sure if i'll implement voting. IRT has had quite a few botting incidents (with Bar Harbor being the first and most famous) and the creators have since surrounded it with more and more secure anti-bot facilities. Implementing voting would mean bypassing the anti-bots, **but also** ensuring people can't steal my implementation to make more bots, while keeping the full code open source. It *may* be possible (I'm not sharing my theories yet), and if I do implement it, expect it by the end of summer at the earliest.
+
 ## Contributing
 
 Any contributions are welcome, if you have a bug, feature request, or would like to submit more binaries, feel free to open an issue or PR.
-
-## A note about voting
-
-TODO
 
 ## License
 
