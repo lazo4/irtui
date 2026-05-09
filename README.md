@@ -6,18 +6,18 @@ A terminal user interface for the [Neal.fun Internet Roadtrip](https://neal.fun/
 
 If you're new to IRT, please check out the [(un)official guide](https://bit.ly/unofficial-guide)
 
-## Screenshots
+## Demo
 
 ![Demo](demo/demo.gif)
 
-Ngl, these screenshots are optimistic. I ran them on macos, inside the vscode terminal, but terminal support and fonts vary wildly, so the image may display differently and and be kinda glitchy. Sadly, I haven't found a way to get chafa working on windows, so for now windows users will just see the image rendered with halfblocks.
+Actual results may vary, according to fonts and terminal support.
 
 ## Features/TODO
 
 - [x] Bare bones: pano rendering and vote counts
+- [x] Support HiveChat
 - [ ] Support honking
-- [ ] Support HiveChat
-- [ ] Support voting
+- [ ] Support voting (See [note](#a-note-about-voting))
 - [ ] Display the odometer
 - [ ] Display the minimap
 - [ ] Display and play the radio
@@ -67,6 +67,10 @@ The binary is now in `target/release/irtui`
 ## Contributing
 
 Any contributions are welcome, if you have a bug, feature request, or would like to submit more binaries, feel free to open an issue or PR.
+
+## A note about voting
+
+TODO
 
 ## License
 
