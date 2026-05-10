@@ -15,11 +15,11 @@ Actual results may vary, according to fonts and terminal support.
 ## Features/TODO
 
 - [x] Bare bones: pano rendering and vote counts
-- [x] Support HiveChat
-- [ ] Display the odometer
-- [ ] Support honking
-- [ ] Support voting (See [note](#a-note-about-voting))
-- [ ] Display the minimap
+- [x] Hivechat
+- [x] Odometer
+- [ ] Honking
+- [ ] Voting (See [note](#a-note-about-voting))
+- [ ] Minimap
 - [ ] Display and play the radio
 - [ ] Add a link to the main site and to the discord
 - [ ] Maybe support [custom glyphs](https://rapha.land/introducing-glyph-protocol-for-terminals/), for the vote options icons

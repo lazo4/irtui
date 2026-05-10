@@ -81,6 +81,10 @@ Type "c"
 Sleep 3s
 Type "c"
 Sleep 2s
+Type "u"
+Sleep 3s
+Type "u"
+Sleep 2s
 
 Type "q"
 
