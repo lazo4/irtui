@@ -15,7 +15,7 @@ use unicode_width::UnicodeWidthStr;
 
 const WIDE_BREAK: u16 = 92;
 
-use crate::app::{App, Hivechat};
+use crate::app::{App, DistanceUnit, Hivechat, Odometer};
 
 /// Compute the minimum width of a piece of text (kinda like css min-width I think)
 fn compute_min_width(content: &str, wrap: bool) -> u16 {
@@ -335,6 +335,58 @@ impl Widget for &mut App {
         self.render_location(area, buf);
         self.render_drivers_online(area, buf);
         self.render_vote_counts(area, buf);
+        self.odometer.render(area, buf);
+    }
+}
+
+impl Widget for &Odometer {
+    fn render(self, area: Rect, buf: &mut Buffer)
+    where
+        Self: Sized,
+    {
+        let distance = match self.unit {
+            DistanceUnit::Miles => self.distance,
+            DistanceUnit::Kilometers => self.distance * 1.609344,
+        } as u64;
+
+        let distance_str = if distance == 0 {
+            "00000".to_string()
+        } else {
+            format!("{distance:03}")
+        };
+
+        let line1 =
+            ("▄".to_string() + &"▄▄".repeat(distance_str.len()) + "▄▄").fg(Color::Rgb(0, 0, 0));
+        let line2 = ("▌".to_string()
+            + &distance_str
+                .chars()
+                .map(|c| format!("{c}│"))
+                .collect::<String>()
+                .trim_end_matches('│')
+            + "▐")
+            .fg(Color::Rgb(0, 0, 0))
+            .bg(Color::Rgb(255, 255, 255))
+            + match self.unit {
+                DistanceUnit::Miles => "mi",
+                DistanceUnit::Kilometers => "km",
+            }
+            .fg(Color::Rgb(255, 255, 255))
+            .bg(Color::Rgb(0, 0, 0));
+        let line3 =
+            ("▀".to_string() + &"▀▀".repeat(distance_str.len()) + "▀▀").fg(Color::Rgb(0, 0, 0));
+
+        let width = line1.width() as u16;
+        let text = Paragraph::new(vec![line1.into(), line2.into(), line3.into()]);
+
+        text.render(
+            Rect::new(
+                area.width.saturating_sub(width),
+                area.height.saturating_sub(3),
+                width,
+                3,
+            ),
+            buf,
+        );
     }
 }
 

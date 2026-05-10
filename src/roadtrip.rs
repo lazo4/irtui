@@ -43,6 +43,7 @@ pub struct WSEvent {
     // #[serde(deserialize_with = "deserialize_datetime_utc_from_milliseconds")]
     pub end_time: u64,
     pub chat_events: Vec<ChatEvent>,
+    pub distance: f32,
 }
 
 /// Our current location, as per the websocket
@@ -143,7 +144,8 @@ fn test_ws_event_deserialization() {
                 "timestamp": 1777567652631,
                 "color": "#88ff8a"
             }
-        ]
+        ],
+        "distance":30000.00
     }
     "##;
 
@@ -154,6 +156,7 @@ fn test_ws_event_deserialization() {
     assert_eq!(event.vote_counts.get(&1), Some(&10));
     assert_eq!(event.options.len(), 1);
     assert_eq!(event.end_time, 1000);
+    assert_eq!(event.distance, 30000.0);
 }
 
 #[cfg(test)]

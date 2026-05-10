@@ -35,6 +35,20 @@ pub struct Hivechat {
     pub scroll_offset: u16,
 }
 
+#[derive(Debug, Default)]
+pub struct Odometer {
+    /// The total distance covered by the roadtrip, in miles
+    pub distance: f32,
+    pub unit: DistanceUnit,
+}
+
+#[derive(Debug, Default)]
+pub enum DistanceUnit {
+    #[default]
+    Miles,
+    Kilometers,
+}
+
 /// Application
 pub struct App {
     /// Is the application running?
@@ -69,6 +83,9 @@ pub struct App {
 
     /// The current state of the Hivechat
     pub hivechat: Hivechat,
+
+    /// The distance covered by the roadtrip, in miles
+    pub odometer: Odometer,
 }
 
 impl App {
@@ -141,6 +158,7 @@ impl App {
                 messages,
                 ..Hivechat::default()
             },
+            odometer: Odometer::default(),
         }
     }
 
@@ -232,6 +250,7 @@ impl App {
                 self.vote_counts = evt.vote_counts;
                 self.vote_options = evt.options;
                 self.vote_ends = Some(evt.end_time);
+                self.odometer.distance = evt.distance;
 
                 if !evt.chat_events.is_empty() {
                     self.hivechat.scroll_offset = 0; // Go to bottom when new message arrives
@@ -280,6 +299,13 @@ impl App {
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.hivechat.scroll_offset += 1; // Scroll up
+            }
+            KeyCode::Char('u') => {
+                // Toggle the distance unit
+                self.odometer.unit = match self.odometer.unit {
+                    DistanceUnit::Miles => DistanceUnit::Kilometers,
+                    DistanceUnit::Kilometers => DistanceUnit::Miles,
+                };
             }
             _ => debug!(code = ?key_event.code, "Unhandled key event"),
         }
@@ -389,6 +415,7 @@ mod tests {
             vote_counts: HashMap::from([(-1, 3), (-2, 2), (0, 8), (1, 3)]),
             end_time,
             chat_events: Vec::new(),
+            distance: 10000.0,
         }));
         sender.send(event).unwrap();
         sender.send(Event::Tick).unwrap(); // Break the loop
