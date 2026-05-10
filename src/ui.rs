@@ -346,7 +346,7 @@ impl Widget for &Odometer {
     {
         let distance = match self.unit {
             DistanceUnit::Miles => self.distance,
-            DistanceUnit::Kilometers => self.distance * 1.609344,
+            DistanceUnit::Kilometers => self.distance * 1.609_344,
         } as u64;
 
         let distance_str = if distance == 0 {
@@ -358,16 +358,15 @@ impl Widget for &Odometer {
         let line1 =
             ("▄".to_string() + &"▄▄".repeat(distance_str.len()) + "▄▄").fg(Color::Rgb(0, 0, 0));
         let line2 = ("▌".to_string()
-            + &distance_str
+            + distance_str
                 .chars()
-                .map(|c| format!("{c}│"))
-                .collect::<String>()
+                .fold(String::new(), |s, c| s + &c.to_string() + "│")
                 .trim_end_matches('│')
             + "▐")
             .fg(Color::Rgb(0, 0, 0))
             .bg(Color::Rgb(255, 255, 255))
             + match self.unit {
-                DistanceUnit::Miles => "mi",
+                DistanceUnit::Miles => "Mi",
                 DistanceUnit::Kilometers => "km",
             }
             .fg(Color::Rgb(255, 255, 255))
@@ -376,7 +375,7 @@ impl Widget for &Odometer {
             ("▀".to_string() + &"▀▀".repeat(distance_str.len()) + "▀▀").fg(Color::Rgb(0, 0, 0));
 
         let width = line1.width() as u16;
-        let text = Paragraph::new(vec![line1.into(), line2.into(), line3.into()]);
+        let text = Paragraph::new(vec![line1.into(), line2, line3.into()]);
 
         text.render(
             Rect::new(
