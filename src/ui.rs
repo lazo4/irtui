@@ -456,7 +456,10 @@ mod tests {
 
     use std::collections::HashMap;
 
-    use crate::{event::EventHandler, roadtrip::Location};
+    use crate::{
+        event::EventHandler,
+        roadtrip::{ChatEvent, Location},
+    };
 
     use pretty_assertions::assert_eq;
 
@@ -656,6 +659,82 @@ mod tests {
                 "            │⏩ 5 votes   17%│", // hidden by multi-width symbols: [(14, " ")]
                 "            │   ━━           │",
                 "            ╰────────────────╯",
+            ]),
+        );
+    }
+
+    #[test]
+    fn test_hivechat() {
+        let mut chat = Hivechat {
+            hidden: false,
+            scroll_offset: 0,
+            messages: vec![
+                crate::roadtrip::ChatEvent {
+                    author: "Test".to_string(),
+                    content: "testing testing testing".to_string(),
+                    color: Color::Rgb(255, 0, 0),
+                },
+                ChatEvent {
+                    author: "Test2".to_string(),
+                    content: "testing2 testing2 testing2".to_string(),
+                    color: Color::Rgb(0, 255, 0),
+                },
+            ],
+        };
+        let area = Rect::new(0, 0, 22, 10);
+        let mut buf = Buffer::empty(area);
+
+        chat.render(area, &mut buf);
+        assert_buffer_eq(
+            &buf,
+            &Buffer::with_lines(vec![
+                "💬Test testing testing", // hidden by multi-width symbols: [(1, " ")]
+                "  testing             ",
+                "  Test2 testing2      ",
+                "  testing2 testing2   ",
+                "                      ",
+                "                      ",
+                "                      ",
+                "                      ",
+                "                      ",
+                "                      ",
+            ]),
+        );
+    }
+
+    #[test]
+    fn test_odometer_render() {
+        let odometer = Odometer {
+            distance: 33000.0,
+            unit: DistanceUnit::Miles,
+        };
+
+        let area = Rect::new(0, 0, 15, 3);
+        let mut buf = Buffer::empty(area);
+        odometer.render(area, &mut buf);
+        assert_buffer_eq(
+            &buf,
+            &Buffer::with_lines(vec![
+                "  ▄▄▄▄▄▄▄▄▄▄▄▄▄",
+                "  ▌3│3│0│0│0▐Mi",
+                "  ▀▀▀▀▀▀▀▀▀▀▀▀▀",
+            ]),
+        );
+
+        let odometer = Odometer {
+            distance: 10000.0,
+            unit: DistanceUnit::Kilometers,
+        };
+
+        let area = Rect::new(0, 0, 15, 3);
+        let mut buf = Buffer::empty(area);
+        odometer.render(area, &mut buf);
+        assert_buffer_eq(
+            &buf,
+            &Buffer::with_lines(vec![
+                "  ▄▄▄▄▄▄▄▄▄▄▄▄▄",
+                "  ▌1│6│0│9│3▐km",
+                "  ▀▀▀▀▀▀▀▀▀▀▀▀▀",
             ]),
         );
     }

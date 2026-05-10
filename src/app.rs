@@ -42,7 +42,7 @@ pub struct Odometer {
     pub unit: DistanceUnit,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub enum DistanceUnit {
     #[default]
     Miles,
@@ -352,6 +352,50 @@ mod tests {
     async fn test_app_key_evts() {
         // Fake handler for testing
         let (mut app, sender, _) = new_test_app();
+
+        // Scroll the chat up
+        sender
+            .send(Event::Crossterm(crossterm::event::Event::Key(
+                KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE),
+            )))
+            .unwrap();
+        sender.send(Event::Tick).unwrap(); // To break the event loop and process the quit event
+        app.handle_events().await.unwrap();
+
+        assert_eq!(app.hivechat.scroll_offset, 1);
+
+        // And down
+        sender
+            .send(Event::Crossterm(crossterm::event::Event::Key(
+                KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
+            )))
+            .unwrap();
+        sender.send(Event::Tick).unwrap(); // To break the event loop and process the quit event
+        app.handle_events().await.unwrap();
+
+        assert_eq!(app.hivechat.scroll_offset, 0);
+
+        // Toggle the hivechat
+        sender
+            .send(Event::Crossterm(crossterm::event::Event::Key(
+                KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE),
+            )))
+            .unwrap();
+        sender.send(Event::Tick).unwrap(); // To break the event loop and process the quit event
+        app.handle_events().await.unwrap();
+
+        assert!(app.hivechat.hidden);
+
+        // Change the distance unit
+        sender
+            .send(Event::Crossterm(crossterm::event::Event::Key(
+                KeyEvent::new(KeyCode::Char('u'), KeyModifiers::NONE),
+            )))
+            .unwrap();
+        sender.send(Event::Tick).unwrap(); // To break the event loop and process the quit event
+        app.handle_events().await.unwrap();
+
+        assert_eq!(app.odometer.unit, DistanceUnit::Kilometers);
 
         // Send q event
         sender
