@@ -89,7 +89,7 @@ impl App {
                     .neighborhood
                     .as_ref()
                     .or(location.county.as_ref())
-                    .unwrap_or(&String::new()),
+                    .unwrap_or(&location.state),
                 location.country
             );
 
