@@ -2,12 +2,23 @@ use std::{f32::consts::PI, io::Cursor, sync::Arc, time::Instant};
 
 use anyhow::anyhow;
 use base64::{Engine as _, engine::general_purpose};
-use image::{GenericImage, ImageBuffer, ImageReader, Rgb, RgbImage, imageops};
+use glam::{EulerRot, Mat4};
+use image::{GenericImage, ImageBuffer, ImageReader, Rgba, RgbaImage, imageops};
 use ratatui::layout::Rect;
 use ratatui_image::{Resize, picker::Picker};
 use serde_json::Value;
 use tokio::task;
 use tracing::{Level, debug, error, info, instrument, warn};
+use wgpu::{
+    BindGroupDescriptor, BindGroupEntry, BufferUsages, ColorTargetState, ColorWrites,
+    CommandEncoderDescriptor, Device, Extent3d, FragmentState, Instance, InstanceDescriptor,
+    MultisampleState, Operations, Origin3d, PollType, PrimitiveState, RenderPassColorAttachment,
+    RenderPassDescriptor, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource,
+    TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, TextureAspect,
+    TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor,
+    VertexState,
+    wgt::{BufferDescriptor, TextureDescriptor},
+};
 use wreq::Client;
 
 use crate::{
@@ -316,7 +327,7 @@ pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMeta
 }
 
 #[instrument(skip_all, level = Level::TRACE)]
-async fn load_tile(tile: &Tile, client: &Client) -> anyhow::Result<RgbImage> {
+async fn load_tile(tile: &Tile, client: &Client) -> anyhow::Result<RgbaImage> {
     let query_url = match tile.pano.pano_type {
         PanoType::Official => {
             format!(
@@ -351,7 +362,7 @@ async fn load_tile(tile: &Tile, client: &Client) -> anyhow::Result<RgbImage> {
 
     let img = img.decode()?;
 
-    Ok(img.to_rgb8())
+    Ok(img.to_rgba8())
 }
 
 /// Asynchrounously fetch and stitch together all the tiles for a given pano
@@ -362,7 +373,7 @@ async fn load_tile(tile: &Tile, client: &Client) -> anyhow::Result<RgbImage> {
 ///
 /// TODO: render blank squares instead of failing
 #[instrument(level = Level::DEBUG)]
-pub async fn load_equirect(meta: &PanoMetadata) -> anyhow::Result<RgbImage> {
+pub async fn load_equirect(meta: &PanoMetadata) -> anyhow::Result<RgbaImage> {
     let zoom = meta.max_zoom.min(3);
     let mut buf = ImageBuffer::new(
         meta.zoom_levels[zoom].crop_width,
@@ -438,7 +449,7 @@ fn map_to_sphere(x: f32, y: f32, z: f32, yaw: f32, pitch: f32) -> (f32, f32) {
 }
 
 #[instrument(skip(pano), level = Level::TRACE)]
-fn interpolate_color(x: f32, y: f32, pano: &RgbImage) -> Rgb<u8> {
+fn interpolate_color(x: f32, y: f32, pano: &RgbaImage) -> Rgba<u8> {
     let x = x.rem_euclid(pano.width() as f32 - 1.0);
     let y = y.clamp(0., (pano.height() - 1) as f32);
 
@@ -451,20 +462,20 @@ fn interpolate_color(x: f32, y: f32, pano: &RgbImage) -> Rgb<u8> {
 /// for this code
 #[instrument(skip(pano), level = Level::TRACE)]
 fn pano_to_plane(
-    pano: &RgbImage,
+    pano: &RgbaImage,
     fov: f32,
     out_w: u32,
     out_h: u32,
     yaw: f32,
     pitch: f32,
     roll: f32,
-) -> RgbImage {
+) -> RgbaImage {
     let (pano_width, pano_height) = pano.dimensions();
     let yaw_radian = yaw.to_radians();
     let pitch_radian = pitch.to_radians();
     let roll_radian = roll.to_radians();
 
-    let mut out = RgbImage::new(out_w, out_h);
+    let mut out = RgbaImage::new(out_w, out_h);
 
     let out_width = out_w as f32;
     let out_height = out_h as f32;
@@ -502,40 +513,278 @@ fn pano_to_plane(
 /// # Errors
 /// This can fail if we fail to fetch any of the tiles
 /// TODO: Render a blank space instead of failing
-#[instrument(skip(pano), level = Level::DEBUG)]
-pub fn render_pano_from_metadata(
+fn create_out_tex_view(device: &Device, width: u32, height: u32) -> TextureView {
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some("Out texture"),
+        size: Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::COPY_SRC | TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    texture.create_view(&TextureViewDescriptor::default())
+}
+
+/// Render a pano from it's metadata, fetching the tiles and rendering them into the output buffer
+///
+/// # Errors
+/// This can fail if we fail to fetch any of the tiles
+/// TODO: Render a blank space instead of failing
+// #[instrument(skip(pano, meta), level = Level::DEBUG)]
+#[allow(
+    clippy::default_trait_access,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_lossless
+)]
+pub async fn render_pano_from_metadata(
     meta: &PanoMetadata,
-    pano: &RgbImage,
+    pano: &RgbaImage,
     heading: f32,
     out_w: u32,
     out_h: u32,
-) -> anyhow::Result<RgbImage> {
-    let before_load = Instant::now();
-
-    let load_ms = before_load.elapsed().as_secs_f64() * 1000.0;
-
+) -> anyhow::Result<RgbaImage> {
     let before_render = Instant::now();
 
-    let rendered = pano_to_plane(
+    // Note: this first part is slow, be sure to only do this once in prod
+
+    // Request an instance, the entry point to wgpu
+    let instance = Instance::new(InstanceDescriptor::new_without_display_handle());
+
+    // Request an adapter
+    let adapter = instance.request_adapter(&Default::default()).await?; // Default options
+
+    // Request access to the actual GPU
+    let (device, queue) = adapter.request_device(&Default::default()).await?;
+
+    // Create the Offscreen Render Target Texture
+
+    let tex_view = create_out_tex_view(&device, out_w, out_h);
+
+    let unpadded_bytes_per_row = out_w * 4;
+    let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT; // 256
+    let padding = (align - unpadded_bytes_per_row % align) % align;
+    let padded_bytes_per_row = unpadded_bytes_per_row + padding;
+
+    // Create a staging buffer to copy texture data into
+    let staging_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("Staging buffer"),
+        size: (padded_bytes_per_row * out_h) as u64,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    // Set up the transform matrix, this is part AI, i suck at this
+    let fov = 90.0f32.to_radians();
+    let aspect = out_w as f32 / out_h as f32;
+    let projection_inv = Mat4::perspective_rh(fov, aspect, 0.1, 10.0).inverse();
+
+    let yaw = (270. - meta.heading as f32 + heading)
+        .rem_euclid(360.)
+        .to_radians();
+    let pitch = 0.0;
+    let roll = meta.roll.to_radians() as f32;
+
+    // V_inv is just the pure rotation matrix of the camera in the world.
+    // YXZ order applies Heading (Y), then Pitch (X), then Roll (Z).
+    let view_inv = Mat4::from_euler(EulerRot::YXZ, yaw, pitch, roll);
+
+    // 3. Combine them directly
+    // Order matters: We want to un-project first, then un-rotate.
+    let inv_view_proj = view_inv * projection_inv;
+
+    // Create uniform buffer with raw 64-byte matrix capacity
+    let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Camera Matrix Buffer"),
+        size: std::mem::size_of::<[[f32; 4]; 4]>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(
+        &camera_buffer,
+        0,
+        bytemuck::cast_slice(&inv_view_proj.to_cols_array_2d()),
+    );
+
+    // Create and send the input texture
+
+    let in_tex = device.create_texture(&TextureDescriptor {
+        label: Some("In texture"),
+        size: Extent3d {
+            width: pano.width(),
+            height: pano.height(),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+
+    let in_tex_view = &in_tex.create_view(&Default::default());
+
+    let sampler = device.create_sampler(&Default::default());
+
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &in_tex,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
         pano,
-        90.,
-        out_w,
-        out_h,
-        (270. - meta.heading as f32 + heading).rem_euclid(360.), // This seems to work, let's not mess with it, OK
-        meta.tilt as f32,
-        -meta.roll as f32,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(pano.width() * 4),
+            rows_per_image: None,
+        },
+        in_tex.size(),
     );
 
-    let render_ms = before_render.elapsed().as_secs_f64() * 1000.0;
+    // Compile and create the shader
 
-    let total_ms = before_load.elapsed().as_secs_f64() * 1000.0;
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("Equirectangular shader"),
+        source: ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+    });
 
-    debug!(
-        load_ms,
-        render_ms, total_ms, out_w, out_h, heading, "Rendered panorama"
+    // Create a rendering pipeline
+
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("Pano Render Pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::all(),
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let camera_bind = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("Camera Bind Group"),
+        layout: &pipeline.get_bind_group_layout(0),
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: camera_buffer.as_entire_binding(),
+        }],
+    });
+
+    let texture_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Texture Bind Group"),
+        layout: &pipeline.get_bind_group_layout(1), // Automatically extracted @group(1)
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(in_tex_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+
+    let render_pass_desc = RenderPassDescriptor {
+        label: Some("Render Pass"),
+        color_attachments: &[Some(RenderPassColorAttachment {
+            view: &tex_view,
+            depth_slice: None,
+            resolve_target: None,
+            ops: Operations::default(),
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    };
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("Command Encoder"),
+    });
+
+    // Create a render pass (frame, afaik)
+    {
+        let mut pass = encoder.begin_render_pass(&render_pass_desc);
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &camera_bind, &[]);
+        pass.set_bind_group(1, &texture_bind, &[]);
+        pass.draw(0..3, 0..1);
+    }
+
+    // 10. Copy Texture to Aligned CPU Buffer
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: tex_view.texture(),
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &staging_buffer,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(padded_bytes_per_row),
+                rows_per_image: None,
+            },
+        },
+        Extent3d {
+            width: out_w,
+            height: out_h,
+            depth_or_array_layers: 1,
+        },
     );
 
-    Ok(rendered)
+    queue.submit(std::iter::once(encoder.finish()));
+
+    let buffer_slice = staging_buffer.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+        tx.send(result).unwrap();
+    });
+
+    device.poll(PollType::Wait {
+        submission_index: None,
+        timeout: None,
+    })?;
+    rx.recv().unwrap().unwrap();
+
+    let data = buffer_slice.get_mapped_range();
+    let mut pixel_data = Vec::with_capacity((out_w * out_h * 4) as usize);
+    for chunk in data.chunks_exact(padded_bytes_per_row as usize) {
+        pixel_data.extend_from_slice(&chunk[..unpadded_bytes_per_row as usize]);
+    }
+    drop(data);
+    staging_buffer.unmap();
+
+    let total_ms = before_render.elapsed().as_secs_f64() * 1000.0;
+    info!(total_ms, out_w, out_h, heading, "GPU rendered panorama");
+
+    RgbaImage::from_raw(out_w, out_h, pixel_data)
+        .ok_or_else(|| anyhow!("Failed to create image from pixel data"))
 }
 
 /// Spawn the task responsible for fetching and rendering gsv panos.
@@ -667,7 +916,9 @@ pub fn spawn_rendering_task(
                     cur_heading as f32,
                     width as u32,
                     height as u32,
-                ) {
+                )
+                .await
+                {
                     Ok(pano) => {
                         debug!("Rendered panorama for display");
                         pano
@@ -765,16 +1016,16 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_render_pano_from_metadata_basic() {
-        use image::RgbImage;
+    #[tokio::test]
+    async fn test_render_pano_from_metadata_basic() {
+        use image::RgbaImage;
 
         // fake 2x2 pano image
-        let mut pano = RgbImage::new(2, 2);
-        pano.put_pixel(0, 0, image::Rgb([255, 0, 0]));
-        pano.put_pixel(1, 0, image::Rgb([0, 255, 0]));
-        pano.put_pixel(0, 1, image::Rgb([0, 0, 255]));
-        pano.put_pixel(1, 1, image::Rgb([255, 255, 0]));
+        let mut pano = RgbaImage::new(2, 2);
+        pano.put_pixel(0, 0, image::Rgba([255, 0, 0, 255]));
+        pano.put_pixel(1, 0, image::Rgba([0, 255, 0, 255]));
+        pano.put_pixel(0, 1, image::Rgba([0, 0, 255, 255]));
+        pano.put_pixel(1, 1, image::Rgba([255, 255, 0, 255]));
 
         // fake metadata
         let meta = super::PanoMetadata {
@@ -801,7 +1052,9 @@ mod tests {
         };
 
         // call render
-        let rendered = super::render_pano_from_metadata(&meta, &pano, 0.0, 4, 4).unwrap();
+        let rendered = super::render_pano_from_metadata(&meta, &pano, 0.0, 4, 4)
+            .await
+            .unwrap();
 
         assert_eq!(rendered.width(), 4);
         assert_eq!(rendered.height(), 4);
