@@ -1,4 +1,4 @@
-//! Abstraction over the street view api, most of this is adapted from [https://github.com/Mikarific/LookoutTheWindow]
+//! Abstraction over the street view api, most of this is adapted from <https://github.com/Mikarific/LookoutTheWindow>
 
 use std::{io::Cursor, sync::Arc};
 

@@ -3,7 +3,7 @@ use std::time::Instant;
 use anyhow::anyhow;
 use glam::{EulerRot, Mat4};
 use image::RgbaImage;
-use ratatui::layout::{Rect, Size};
+use ratatui::layout::Size;
 use ratatui_image::{Resize, picker::Picker};
 use tracing::{Level, debug, error, info, instrument};
 use wgpu::{
@@ -31,6 +31,7 @@ mod api;
 /// This can fail if we fail to fetch any of the tiles
 /// TODO: Render a blank space instead of failing
 #[instrument(skip(meta), level = Level::DEBUG)]
+#[allow(clippy::default_trait_access)]
 pub async fn render_pano_from_metadata(
     meta: &PanoMetadata,
     heading: f32,
@@ -151,7 +152,7 @@ pub async fn render_pano_from_metadata(
     // Create a render pass (frame, afaik)
     {
         let mut pass = encoder.begin_render_pass(&render_pass_desc);
-        pass.set_pipeline(&pipeline);
+        pass.set_pipeline(pipeline);
         pass.set_bind_group(0, &camera_bind, &[]);
         pass.set_bind_group(1, &texture_bind, &[]);
         pass.draw(0..3, 0..1);
@@ -218,11 +219,29 @@ pub struct GPUState {
     pub pipeline: RenderPipeline,
 }
 
+fn create_out_texture(device: &Device, width: u32, height: u32) -> Texture {
+    device.create_texture(&TextureDescriptor {
+        label: Some("Out texture"),
+        size: Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::COPY_SRC | TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    })
+}
+
 /// Spawn the task responsible for fetching and rendering gsv panos.
 ///
 /// # Errors
 /// This fails if we fail to spawn the task e.g. we fail to query the terminal size
 #[instrument(skip_all, level = Level::DEBUG)]
+#[allow(clippy::default_trait_access)]
 pub fn spawn_rendering_task(
     mut pano_rx: tokio::sync::mpsc::Receiver<PanoRequest>,
     evt_sender: tokio::sync::mpsc::UnboundedSender<Event>,
@@ -242,25 +261,16 @@ pub fn spawn_rendering_task(
         let instance = Instance::new(InstanceDescriptor::new_without_display_handle());
 
         // Request an adapter
-        let adapter = instance.request_adapter(&Default::default()).await.unwrap(); // Default options
+        let adapter = instance.request_adapter(&Default::default()).await?; // Default options
 
         // Request access to the actual GPU
-        let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
+        let (device, queue) = adapter.request_device(&Default::default()).await?;
 
-        let out_texture = device.create_texture(&TextureDescriptor {
-            label: Some("Out texture"),
-            size: Extent3d {
-                width: (font_size.width * cur_size.0) as u32,
-                height: (font_size.height * cur_size.1) as u32,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::COPY_SRC | TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
+        let out_texture = create_out_texture(
+            &device,
+            (font_size.width * cur_size.0) as u32,
+            (font_size.height * cur_size.1) as u32,
+        );
 
         let in_texture = device.create_texture(&TextureDescriptor {
             label: Some("In texture"),
@@ -425,20 +435,11 @@ pub fn spawn_rendering_task(
             // Invalidate the output texture if the screen has been resized
             if needs_resize {
                 gpu_state.out_texture.destroy();
-                gpu_state.out_texture = gpu_state.device.create_texture(&TextureDescriptor {
-                    label: Some("Out texture"),
-                    size: Extent3d {
-                        width: (font_size.width * cur_size.0) as u32,
-                        height: (font_size.height * cur_size.1) as u32,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: TextureDimension::D2,
-                    format: TextureFormat::Rgba8Unorm,
-                    usage: TextureUsages::COPY_SRC | TextureUsages::RENDER_ATTACHMENT,
-                    view_formats: &[],
-                });
+                gpu_state.out_texture = create_out_texture(
+                    &gpu_state.device,
+                    (font_size.width * cur_size.0) as u32,
+                    (font_size.height * cur_size.1) as u32,
+                );
             }
 
             // In both cases rerender the screen
