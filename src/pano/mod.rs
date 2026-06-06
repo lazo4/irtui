@@ -1,14 +1,11 @@
-use std::{f32::consts::PI, io::Cursor, sync::Arc, time::Instant};
+use std::time::Instant;
 
 use anyhow::anyhow;
-use base64::{Engine as _, engine::general_purpose};
 use glam::{EulerRot, Mat4};
-use image::{GenericImage, ImageBuffer, ImageReader, Rgba, RgbaImage, imageops};
+use image::RgbaImage;
 use ratatui::layout::Rect;
 use ratatui_image::{Resize, picker::Picker};
-use serde_json::Value;
-use tokio::task;
-use tracing::{Level, debug, error, info, instrument, warn};
+use tracing::{Level, debug, error, info, instrument};
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BufferUsages, ColorTargetState, ColorWrites,
     CommandEncoderDescriptor, Device, Extent3d, FragmentState, Instance, InstanceDescriptor,
@@ -16,12 +13,9 @@ use wgpu::{
     RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
     ShaderModule, ShaderModuleDescriptor, ShaderSource, TexelCopyBufferInfo, TexelCopyBufferLayout,
     TexelCopyTextureInfo, Texture, TextureAspect, TextureDimension, TextureFormat, TextureUsages,
-    TextureView, TextureViewDescriptor, VertexState,
-    hal::auxil::db::qualcomm,
-    wgc::command::CommandEncoderError::Query,
+    VertexState,
     wgt::{BufferDescriptor, TextureDescriptor},
 };
-use wreq::Client;
 
 use crate::{
     app::PanoRequest,
