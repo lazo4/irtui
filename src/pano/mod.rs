@@ -3,7 +3,7 @@ use std::time::Instant;
 use anyhow::anyhow;
 use glam::{EulerRot, Mat4};
 use image::RgbaImage;
-use ratatui::layout::Rect;
+use ratatui::layout::{Rect, Size};
 use ratatui_image::{Resize, picker::Picker};
 use tracing::{Level, debug, error, info, instrument};
 use wgpu::{
@@ -251,8 +251,8 @@ pub fn spawn_rendering_task(
         let out_texture = device.create_texture(&TextureDescriptor {
             label: Some("Out texture"),
             size: Extent3d {
-                width: (font_size.0 * cur_size.0) as u32,
-                height: (font_size.1 * cur_size.1) as u32,
+                width: (font_size.width * cur_size.0) as u32,
+                height: (font_size.height * cur_size.1) as u32,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -429,8 +429,8 @@ pub fn spawn_rendering_task(
                 gpu_state.out_texture = gpu_state.device.create_texture(&TextureDescriptor {
                     label: Some("Out texture"),
                     size: Extent3d {
-                        width: (font_size.0 * cur_size.0) as u32,
-                        height: (font_size.1 * cur_size.1) as u32,
+                        width: (font_size.width * cur_size.0) as u32,
+                        height: (font_size.height * cur_size.1) as u32,
                         depth_or_array_layers: 1,
                     },
                     mip_level_count: 1,
@@ -446,8 +446,8 @@ pub fn spawn_rendering_task(
             if let Some(meta) = &meta_cache
                 && (needs_resize || new_pano)
             {
-                let width = cur_size.0 * font_size.0;
-                let height = cur_size.1 * font_size.1;
+                let width = cur_size.0 * font_size.width;
+                let height = cur_size.1 * font_size.height;
 
                 debug!("Rendering pano");
 
@@ -463,7 +463,7 @@ pub fn spawn_rendering_task(
                     Ok(screen) => {
                         match picker.new_protocol(
                             screen.into(),
-                            Rect::new(0, 0, width, height),
+                            Size::new(width, height),
                             Resize::Crop(None),
                         ) {
                             Ok(protocol) => {
