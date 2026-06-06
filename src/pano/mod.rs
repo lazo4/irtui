@@ -24,7 +24,6 @@ use crate::{
 };
 
 mod api;
-mod render;
 
 /// Render a pano from it's metadata, fetching the tiles and rendering them into the output buffer
 ///
