@@ -542,10 +542,75 @@ mod tests {
             roll: 0.0,
         };
 
+        let instance = Instance::new(InstanceDescriptor::new_without_display_handle());
+
+        // Request an adapter
+        let adapter = instance.request_adapter(&Default::default()).await.unwrap(); // Default options
+
+        // Request access to the actual GPU
+        let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
+
+        let out_texture = create_out_texture(&device, 4, 4);
+
+        let in_texture = device.create_texture(&TextureDescriptor {
+            label: Some("In texture"),
+            size: Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        }); // This is inefficient, but our struct must be fully initialized
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("Equirectangular shader"),
+            source: ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        });
+
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("Pano Render Pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::all(),
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let mut gpu_state = GPUState {
+            device,
+            queue,
+            out_texture,
+            in_texture,
+            shader,
+            pipeline,
+        };
+
         // call render
-        // let rendered = super::render_pano_from_metadata(&meta, &pano, 0.0, 4, 4)
-        //     .await
-        //     .unwrap();
+        let rendered = super::render_pano_from_metadata(&meta, 0.0, 4, 4, &gpu_state)
+            .await
+            .unwrap();
 
         // assert_eq!(rendered.width(), 4);
         // assert_eq!(rendered.height(), 4);
